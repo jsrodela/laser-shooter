@@ -12,8 +12,11 @@ WHITE_THRESHOLD = update("White threshhold(0-255)", 160)
 vid = 0
 
 print("Select Video input\n\t(0) Webcam (1) Videos\n")
-ans = input("Video input(default=0): ")
-if ans.isdigit() and int(ans) == 1:
+ans = update("Video input", 0)
+
+if ans == 0:
+    vid = update("Video Input id", 0)
+if ans == 1:
     videos = os.listdir("videos")
     for idx, file in enumerate(videos):
         print(f'\t({idx}) {file}')

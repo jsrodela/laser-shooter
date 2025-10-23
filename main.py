@@ -88,9 +88,6 @@ def name_input():
     global name
     name = input("Enter your name(settings|debug|*): ")
 
-    update: Callable[[str, float], float] = lambda name, default: (
-        lambda x: int(x) if x.isdigit() else default
-    )(input(f"{name} (default: {default}): "))
 
     if name == "settings":
         print("Settings mode activated. Please configure your settings.")
@@ -142,18 +139,27 @@ name_input()
 # 웹캠 열기
 # --------------------------
 
+update: Callable[[str, float], float] = lambda name, default: (
+        lambda x: int(x) if x.isdigit() else default
+    )(input(f"{name} (default: {default}): "))
+
 vid = 0
 
 print("Select Video input\n\t(0) Webcam (1) Videos\n")
-ans = input("Video input(default=0): ")
-if ans.isdigit() and int(ans) == 1:
+ans = update("Video input", 0)
+
+if ans == 0:
+    vid = update("Video Input id", 0)
+if ans == 1:
     videos = os.listdir("videos")
     for idx, file in enumerate(videos):
-        print(f"\t({idx}) {file}")
+        print(f'\t({idx}) {file}')
     print()
-    vid = os.path.join("videos", videos[int(input("Video id: "))])
+    vid = os.path.join('videos', videos[int(input("Video id: "))])
 
+print(vid)
 cap = cv2.VideoCapture(vid)
+
 shots = []  # 기록: (shot_number, (x,y), score)
 hits = []  # 기록: (x,y,timestamp)
 
