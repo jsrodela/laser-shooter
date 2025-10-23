@@ -149,7 +149,7 @@ print("Select Video input\n\t(0) Webcam (1) Videos\n")
 ans = update("Video input", 0)
 
 if ans == 0:
-    vid = update("Video Input id", 0)
+    vid = update("Webcam Input id", 0)
 if ans == 1:
     videos = os.listdir("videos")
     for idx, file in enumerate(videos):

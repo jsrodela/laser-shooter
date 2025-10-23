@@ -12,7 +12,7 @@ WHITE_THRESHOLD = update("White threshhold(0-255)", 160)
 vid = 0
 
 print("Select Video input\n\t(0) Webcam (1) Videos\n")
-ans = update("Video input", 0)
+ans = update("Webcam input", 0)
 
 if ans == 0:
     vid = update("Video Input id", 0)
