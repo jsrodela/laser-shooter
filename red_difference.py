@@ -2,7 +2,12 @@ import cv2
 import numpy as np
 import os
 
-WHITE_THRESHOLD = 160
+
+update = lambda name, default: (
+    lambda x: int(x) if x.isdigit() else default
+)(input(f"{name} (default: {default}): "))
+    
+WHITE_THRESHOLD = update("White threshhold(0-255)", 160)
 
 vid = 0
 

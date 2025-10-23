@@ -132,6 +132,7 @@ print("""
 Ver.4.0 Changes
     - Changed red point detection method from HSV to YCbCr.
     - Added 0.3 seconds delay after round to prevent cause error in next game.
+    - Added demo video testing.
 
 """)
 
