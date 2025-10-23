@@ -4,6 +4,10 @@ from typing import Callable
 import os
 import time
 
+update = lambda name, default: (
+    lambda x: int(x) if x.isdigit() else default
+    )(input(f"{name} (default: {default}): "))
+
 # --------------------------
 # 설정: 아루코 마커, 과녁 크기, 점수링
 # --------------------------
