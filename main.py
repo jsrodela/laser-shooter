@@ -1,13 +1,12 @@
-
 import cv2
 import numpy as np
 from typing import Callable
 import os
 import time
 
-update = lambda name, default: (
-    lambda x: int(x) if x.isdigit() else default
-    )(input(f"{name} (default: {default}): "))
+update = lambda name, default: (lambda x: int(x) if x.isdigit() else default)(
+    input(f"{name} (default: {default}): ")
+)
 
 # --------------------------
 # 설정: 아루코 마커, 과녁 크기, 점수링
@@ -17,6 +16,7 @@ parameters = cv2.aruco.DetectorParameters()
 detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
 print("> Aruco Detector initialized.")
+
 
 # A4 과녁 크기 (픽셀 기준)
 TARGET_WIDTH: float = 595
@@ -34,7 +34,9 @@ print(f"> Inner Radius: {INNER_RADIUS}, Outer Radius: {OUTER_RADIUS}")
 
 
 # 자동으로 같은 간격 링 생성
-RING_RADIUS = np.linspace(INNER_RADIUS, OUTER_RADIUS, len(SCORES)).astype(int).tolist()
+RING_RADIUS = list(
+    np.linspace(INNER_RADIUS, OUTER_RADIUS, len(SCORES)).astype(int).tolist()
+)
 print("> Auto Generated RING_RADIUS:", RING_RADIUS)
 
 # 최소 거리 차이 (같은 레이저를 중복 감지 방지)
@@ -90,9 +92,8 @@ def reset():
 
 def name_input():
     """사용자 이름 입력"""
-    global name
+    global name, TARGET_WIDTH, TARGET_HEIGHT, INNER_RADIUS, OUTER_RADIUS, RING_RADIUS, WHITE_THRESHOLD
     name = input("Enter your name(settings|debug|*): ")
-
 
     if name == "settings":
         print("Settings mode activated. Please configure your settings.")
@@ -108,14 +109,15 @@ def name_input():
         print(
             f"\tSettings updated: INNER_RADIUS={INNER_RADIUS}, OUTER_RADIUS={OUTER_RADIUS}"
         )
-        RING_RADIUS = (
+        RING_RADIUS = list(
             np.linspace(INNER_RADIUS, OUTER_RADIUS, len(SCORES)).astype(int).tolist()
         )
-        print(f"\tAuto Generated RING_RADIUS: {RING_RADIUS}")
+
+        print("> Auto Generated RING_RADIUS:", RING_RADIUS)
 
         WHITE_THRESHOLD = update("White Threshol(0-255)", 160)
         print(f"\tSettings updated: WHITE_THRESHOLD={WHITE_THRESHOLD}")
-        
+
         print()
         name_input()  # 재귀 호출로 이름 입력 반복
     print(f"Welcome {name}!\n")
@@ -147,8 +149,8 @@ name_input()
 # --------------------------
 
 update: Callable[[str, float], float] = lambda name, default: (
-        lambda x: int(x) if x.isdigit() else default
-    )(input(f"{name} (default: {default}): "))
+    lambda x: int(x) if x.isdigit() else default
+)(input(f"{name} (default: {default}): "))
 
 vid = 0
 
@@ -160,9 +162,9 @@ if ans == 0:
 if ans == 1:
     videos = os.listdir("videos")
     for idx, file in enumerate(videos):
-        print(f'\t({idx}) {file}')
+        print(f"\t({idx}) {file}")
     print()
-    vid = os.path.join('videos', videos[int(input("Video id: "))])
+    vid = os.path.join("videos", videos[int(input("Video id: "))])
 
 print(vid)
 cap = cv2.VideoCapture(vid)
@@ -311,3 +313,6 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+
+print(f"Auto Generated RING_RADIUS: {RING_RADIUS}")
+print(WHITE_THRESHOLD)
