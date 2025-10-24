@@ -74,7 +74,7 @@ def is_new_shot(new_pt, hits, min_interval=MIN_INTERVAL, min_dist=MIN_DIST):
 
 
 def reset():
-    for _ in range(10):
+    for _ in range(50):
         cap.read()
     total_score = sum([s for _, _, s in shots])
     print(f"=== 10 Shots Completed ===")
