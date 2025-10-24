@@ -74,8 +74,8 @@ def is_new_shot(new_pt, hits, min_interval=MIN_INTERVAL, min_dist=MIN_DIST):
 
 
 def reset():
-    for _ in range(10):
-        cap.read()
+    # for _ in range(100):
+    #     cap.read()
     total_score = sum([s for _, _, s in shots])
     print(f"=== 10 Shots Completed ===")
     print(f"Total Score: {name} - {total_score}")
@@ -252,6 +252,8 @@ while True:
                     shots.append((shot_number, (cx, cy), score))
                     hits.append((cx, cy, time.time()))
                     print(f"Shot {shot_number}: Score={score}, Position=({cx},{cy})")
+                    # for i in range(20):
+                    #     cap.read()
 
                 if len(shots) >= MAX_SHOTS:
                     reset()
@@ -300,6 +302,8 @@ while True:
     if key == ord("h"):
         print("hits: ", hits)
         print("shots: ", shots)
+    if key == ord("r"):
+        shots = []
 
 cap.release()
 cv2.destroyAllWindows()
