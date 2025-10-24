@@ -1,3 +1,4 @@
+
 import cv2
 import numpy as np
 from typing import Callable
@@ -129,6 +130,8 @@ print("""
 - Enhanced By  ywbird of RDL -
 
 ==============================
+
+ - Press `R` key on target window to reset current shots.
 
 Ver.4.0 Changes
     - Changed red point detection method from HSV to YCbCr.
@@ -304,6 +307,7 @@ while True:
         print("shots: ", shots)
     if key == ord("r"):
         shots = []
+        print("\n\nresetted\n\n")
 
 cap.release()
 cv2.destroyAllWindows()
