@@ -2,6 +2,7 @@ import base64
 from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, Lock, Thread
+from time import perf_counter
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -74,6 +75,8 @@ class FrameWorker:
                 capture = open_video_capture(self.source)
             engine = LaserShooterEngine(self.config)
             self.events.put(("started", opened_source))
+            fps_started_at = perf_counter()
+            fps_frame_count = 0
 
             while not self.stop_event.is_set():
                 if self.reset_event.is_set():
@@ -96,6 +99,12 @@ class FrameWorker:
                     break
 
                 result = engine.process_frame(frame, self.player_name)
+                fps_frame_count += 1
+                fps_elapsed = perf_counter() - fps_started_at
+                if fps_elapsed >= 0.5:
+                    self.events.put(("fps", fps_frame_count / fps_elapsed))
+                    fps_started_at = perf_counter()
+                    fps_frame_count = 0
                 for shot in result.new_shots:
                     self.events.put(("shot", shot))
                 self._publish_latest(result)
@@ -152,6 +161,7 @@ class LaserShooterApp:
         self.max_shots_var = tk.StringVar(value="10")
         self.total_score_var = tk.StringVar(value="0")
         self.shot_count_var = tk.StringVar(value="0 / 10")
+        self.fps_var = tk.StringVar(value="FPS: --")
         self.status_var = tk.StringVar(value="Ready. Configure the camera and press Start.")
 
         self._build_style()
@@ -168,6 +178,9 @@ class LaserShooterApp:
         style.configure("Status.TLabel", padding=(10, 7))
         style.configure("Score.TLabel", font=("Segoe UI", 22, "bold"))
         style.configure("Heading.TLabel", font=("Segoe UI", 12, "bold"))
+        style.configure(
+            "Fps.TLabel", font=("Consolas", 12, "bold"), foreground="#2563eb"
+        )
 
     def _build_ui(self) -> None:
         self.root.columnconfigure(0, weight=1)
@@ -214,6 +227,10 @@ class LaserShooterApp:
             controls, text="Browse...", command=self._browse_video
         )
         self.browse_button.grid(row=0, column=8, padx=(0, 12), pady=8)
+
+        ttk.Label(
+            controls, textvariable=self.fps_var, style="Fps.TLabel", width=10
+        ).grid(row=0, column=9, padx=(0, 12), pady=8)
 
         self.start_button = ttk.Button(controls, text="Start", command=self.start)
         self.start_button.grid(row=0, column=10, padx=4, pady=8)
@@ -482,6 +499,7 @@ class LaserShooterApp:
         self.stop_button.configure(state="normal")
         self._set_settings_state("disabled")
         self._clear_scoreboard()
+        self.fps_var.set("FPS: --")
         self.status_var.set("Opening the camera in the background...")
         self.worker.start()
 
@@ -551,6 +569,10 @@ class LaserShooterApp:
             )
             return
 
+        if event == "fps" and isinstance(payload, (int, float)):
+            self.fps_var.set(f"FPS: {payload:.1f}")
+            return
+
         if event != "finished":
             return
 
@@ -561,6 +583,7 @@ class LaserShooterApp:
         self.stop_button.configure(state="disabled")
         self._set_settings_state("normal")
         self._update_source_controls()
+        self.fps_var.set("FPS: --")
         self.status_var.set(str(detail))
 
         if reason == "error":

@@ -37,6 +37,7 @@ options run the legacy terminal interfaces.
 The GUI combines the full workflow in one window:
 
 - Live camera preview with Aruco marker count
+- Live capture and processing FPS display
 - Fast `Auto` camera selection that stops at the first available camera
 - Rectified target preview
 - Live red-laser threshold calibration and slider
