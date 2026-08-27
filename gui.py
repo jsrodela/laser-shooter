@@ -32,6 +32,7 @@ class FrameWorker:
         self.source = source
         self.config = config
         self.player_name = player_name
+        self.preview_frames: Queue[object] = Queue(maxsize=1)
         self.frames: Queue[FrameResult] = Queue(maxsize=1)
         self.events: Queue[tuple[str, object]] = Queue()
         self.stop_event = Event()
@@ -59,6 +60,14 @@ class FrameWorker:
         while True:
             try:
                 latest = self.frames.get_nowait()
+            except Empty:
+                return latest
+
+    def latest_preview(self) -> object | None:
+        latest = None
+        while True:
+            try:
+                latest = self.preview_frames.get_nowait()
             except Empty:
                 return latest
 
@@ -98,6 +107,7 @@ class FrameWorker:
                         )
                     break
 
+                self._publish_latest_preview(frame)
                 result = engine.process_frame(frame, self.player_name)
                 fps_frame_count += 1
                 fps_elapsed = perf_counter() - fps_started_at
@@ -123,6 +133,19 @@ class FrameWorker:
             self._discard_pending_frame()
             try:
                 self.frames.put_nowait(result)
+            except Full:
+                pass
+
+    def _publish_latest_preview(self, frame: object) -> None:
+        try:
+            self.preview_frames.put_nowait(frame)
+        except Full:
+            try:
+                self.preview_frames.get_nowait()
+            except Empty:
+                pass
+            try:
+                self.preview_frames.put_nowait(frame)
             except Full:
                 pass
 
@@ -540,9 +563,14 @@ class LaserShooterApp:
                 self._handle_worker_event(worker, event, payload)
 
             if self.worker is worker:
+                preview = worker.latest_preview()
                 result = worker.latest_frame()
                 if result is not None:
                     self._render_result(result)
+                elif preview is not None and self.notebook.index(
+                    self.notebook.select()
+                ) == 0:
+                    self._show_image(self.preview_label, preview, PREVIEW_SIZE)
 
         self.poll_after_id = self.root.after(33, self._poll_background_work)
 
