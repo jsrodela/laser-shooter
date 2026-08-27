@@ -461,6 +461,7 @@ class LaserShooterApp:
         self.display_window.minsize(800, 500)
         self.display_window.configure(bg="#060b16")
         self.display_window.protocol("WM_DELETE_WINDOW", self._hide_display_window)
+        self.display_window.bind("<KeyPress-space>", self._reset_round_from_space)
         self.display_window.columnconfigure(0, weight=1)
         self.display_window.columnconfigure(1, minsize=300)
         self.display_window.rowconfigure(0, weight=1)
@@ -483,6 +484,7 @@ class LaserShooterApp:
         stats_panel.columnconfigure(0, weight=1)
         stats_panel.rowconfigure(0, weight=1)
         stats_panel.rowconfigure(1, weight=1)
+        stats_panel.rowconfigure(2, minsize=76)
 
         self._build_large_stat(
             stats_panel,
@@ -497,6 +499,21 @@ class LaserShooterApp:
             title="점수",
             variable=self.total_score_var,
             color="#facc15",
+        )
+        self.display_reset_button = tk.Button(
+            stats_panel,
+            text="총알 초기화  ·  Space",
+            command=self.reset_round,
+            bg="#2563eb",
+            activebackground="#1d4ed8",
+            fg="white",
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            font=("Segoe UI", 18, "bold"),
+        )
+        self.display_reset_button.grid(
+            row=2, column=0, sticky="nsew", padx=12, pady=(0, 12)
         )
 
     @staticmethod
@@ -860,6 +877,10 @@ class LaserShooterApp:
         self._clear_scoreboard()
         self._reset_display_target()
         self.status_var.set("Round reset. Ready.")
+
+    def _reset_round_from_space(self, _event: tk.Event) -> str:
+        self.reset_round()
+        return "break"
 
     def _clear_scoreboard(self) -> None:
         for item in self.score_tree.get_children():
