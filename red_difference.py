@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
-import os
+
+from video_source import open_video_capture, select_video_source
 
 
 update = lambda name, default: (
@@ -9,22 +10,12 @@ update = lambda name, default: (
     
 WHITE_THRESHOLD = update("White threshhold(0-255)", 160)
 
-vid = 0
-
-print("Select Video input\n\t(0) Webcam (1) Videos\n")
-ans = update("Webcam input", 0)
-
-if ans == 0:
-    vid = update("Video Input id", 0)
-if ans == 1:
-    videos = os.listdir("videos")
-    for idx, file in enumerate(videos):
-        print(f'\t({idx}) {file}')
-    print()
-    vid = os.path.join('videos', videos[int(input("Video id: "))])
-
-print(vid)
-cap = cv2.VideoCapture(vid)
+try:
+    vid = select_video_source()
+    print(vid)
+    cap = open_video_capture(vid)
+except RuntimeError as error:
+    raise SystemExit(f"Error: {error}") from error
 
 colored = False
 
@@ -32,6 +23,8 @@ while True:
     # 1. 이미지 로드
     ret, img = cap.read()
     if not ret:
+        if isinstance(vid, int):
+            print("Error: The webcam stopped returning frames.")
         break
 
     hh, ww = img.shape[:2]
