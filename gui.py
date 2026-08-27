@@ -1,16 +1,119 @@
 import base64
 from pathlib import Path
+from queue import Empty, Full, Queue
+from threading import Event, Lock, Thread
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import cv2
 
-from laser_engine import FrameResult, LaserShooterEngine, ShooterConfig
-from video_source import open_video_capture
+from laser_engine import FrameResult, LaserShooterEngine, ShooterConfig, Shot
+from video_source import discover_camera_ids, open_video_capture
 
 
 APP_TITLE = "Laser Shooter"
 PREVIEW_SIZE = (620, 540)
+
+
+class FrameWorker:
+    """Own the camera and image processing away from Tk's event thread."""
+
+    def __init__(
+        self,
+        source: int | str,
+        config: ShooterConfig,
+        player_name: str,
+    ):
+        self.source = source
+        self.config = config
+        self.player_name = player_name
+        self.frames: Queue[FrameResult] = Queue(maxsize=1)
+        self.events: Queue[tuple[str, object]] = Queue()
+        self.stop_event = Event()
+        self.reset_event = Event()
+        self.threshold_lock = Lock()
+        self.threshold = config.white_threshold
+        self.thread = Thread(target=self._run, name="laser-camera", daemon=True)
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def stop(self) -> None:
+        self.stop_event.set()
+
+    def request_reset(self) -> None:
+        self.reset_event.set()
+        self._discard_pending_frame()
+
+    def update_threshold(self, threshold: int) -> None:
+        with self.threshold_lock:
+            self.threshold = threshold
+
+    def latest_frame(self) -> FrameResult | None:
+        latest = None
+        while True:
+            try:
+                latest = self.frames.get_nowait()
+            except Empty:
+                return latest
+
+    def _run(self) -> None:
+        capture: cv2.VideoCapture | None = None
+        reason = "stopped"
+        detail = "Stopped."
+
+        try:
+            capture = open_video_capture(self.source)
+            engine = LaserShooterEngine(self.config)
+            self.events.put(("started", self.source))
+
+            while not self.stop_event.is_set():
+                if self.reset_event.is_set():
+                    engine.reset()
+                    self.reset_event.clear()
+
+                with self.threshold_lock:
+                    threshold = self.threshold
+                engine.update_threshold(threshold)
+
+                success, frame = capture.read()
+                if not success:
+                    if not self.stop_event.is_set():
+                        reason = "ended"
+                        detail = (
+                            "The webcam stopped returning frames."
+                            if isinstance(self.source, int)
+                            else "Video playback finished."
+                        )
+                    break
+
+                result = engine.process_frame(frame, self.player_name)
+                for shot in result.new_shots:
+                    self.events.put(("shot", shot))
+                self._publish_latest(result)
+        except Exception as exc:
+            reason = "error"
+            detail = str(exc)
+        finally:
+            if capture is not None:
+                capture.release()
+            self.events.put(("finished", (reason, detail)))
+
+    def _publish_latest(self, result: FrameResult) -> None:
+        try:
+            self.frames.put_nowait(result)
+        except Full:
+            self._discard_pending_frame()
+            try:
+                self.frames.put_nowait(result)
+            except Full:
+                pass
+
+    def _discard_pending_frame(self) -> None:
+        try:
+            self.frames.get_nowait()
+        except Empty:
+            pass
 
 
 class LaserShooterApp:
@@ -22,11 +125,11 @@ class LaserShooterApp:
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.option_add("*Font", ("Segoe UI", 10))
 
-        self.capture: cv2.VideoCapture | None = None
-        self.engine: LaserShooterEngine | None = None
-        self.after_id: str | None = None
+        self.worker: FrameWorker | None = None
+        self.poll_after_id: str | None = None
+        self.camera_scan_results: Queue[tuple[list[int], str | None]] = Queue(maxsize=1)
+        self.camera_scan_in_progress = False
         self.running = False
-        self.source_is_webcam = True
         self.player_name = "Player"
 
         self.player_var = tk.StringVar(value="Player")
@@ -47,6 +150,8 @@ class LaserShooterApp:
         self._build_ui()
         self._update_source_controls()
         self.threshold_var.trace_add("write", self._on_threshold_changed)
+        self.poll_after_id = self.root.after(30, self._poll_background_work)
+        self._scan_cameras()
 
     def _build_style(self) -> None:
         style = ttk.Style(self.root)
@@ -81,19 +186,23 @@ class LaserShooterApp:
         self.source_combo.bind("<<ComboboxSelected>>", self._update_source_controls)
 
         ttk.Label(controls, text="Camera ID").grid(row=0, column=4, padx=(0, 4), pady=8)
-        self.camera_spinbox = ttk.Spinbox(
-            controls, from_=0, to=20, textvariable=self.camera_id_var, width=5
+        self.camera_combo = ttk.Combobox(
+            controls, textvariable=self.camera_id_var, width=6, state="normal"
         )
-        self.camera_spinbox.grid(row=0, column=5, padx=(0, 12), pady=8)
+        self.camera_combo.grid(row=0, column=5, padx=(0, 4), pady=8)
+        self.detect_button = ttk.Button(
+            controls, text="Detect", command=self._scan_cameras
+        )
+        self.detect_button.grid(row=0, column=6, padx=(0, 12), pady=8)
 
         self.video_entry = ttk.Entry(
             controls, textvariable=self.video_path_var, width=28
         )
-        self.video_entry.grid(row=0, column=6, padx=(0, 4), pady=8)
+        self.video_entry.grid(row=0, column=7, padx=(0, 4), pady=8)
         self.browse_button = ttk.Button(
             controls, text="Browse...", command=self._browse_video
         )
-        self.browse_button.grid(row=0, column=7, padx=(0, 12), pady=8)
+        self.browse_button.grid(row=0, column=8, padx=(0, 12), pady=8)
 
         self.start_button = ttk.Button(controls, text="Start", command=self.start)
         self.start_button.grid(row=0, column=10, padx=4, pady=8)
@@ -242,9 +351,64 @@ class LaserShooterApp:
 
     def _update_source_controls(self, _event: object | None = None) -> None:
         webcam_selected = self.source_type_var.get() == "Webcam"
-        self.camera_spinbox.configure(state="normal" if webcam_selected else "disabled")
-        self.video_entry.configure(state="disabled" if webcam_selected else "normal")
-        self.browse_button.configure(state="disabled" if webcam_selected else "normal")
+        camera_state = "normal" if webcam_selected and not self.running else "disabled"
+        self.camera_combo.configure(state=camera_state)
+        detect_state = (
+            "normal"
+            if webcam_selected and not self.running and not self.camera_scan_in_progress
+            else "disabled"
+        )
+        self.detect_button.configure(state=detect_state)
+        video_state = "normal" if not webcam_selected and not self.running else "disabled"
+        self.video_entry.configure(state=video_state)
+        self.browse_button.configure(state=video_state)
+
+    def _scan_cameras(self) -> None:
+        if self.camera_scan_in_progress or self.running:
+            return
+
+        self.camera_scan_in_progress = True
+        self.detect_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.status_var.set("Detecting available camera IDs in the background...")
+
+        def scan() -> None:
+            try:
+                camera_ids = discover_camera_ids()
+                result = (camera_ids, None)
+            except Exception as exc:
+                result = ([], str(exc))
+
+            try:
+                self.camera_scan_results.put_nowait(result)
+            except Full:
+                pass
+
+        Thread(target=scan, name="camera-discovery", daemon=True).start()
+
+    def _apply_camera_scan_result(
+        self, camera_ids: list[int], error: str | None
+    ) -> None:
+        self.camera_scan_in_progress = False
+        values = tuple(str(camera_id) for camera_id in camera_ids)
+        self.camera_combo.configure(values=values)
+
+        if error:
+            self.status_var.set(f"Camera detection failed: {error}")
+        elif camera_ids:
+            current_id = self.camera_id_var.get()
+            if current_id not in values:
+                self.camera_id_var.set(values[0])
+            detected = ", ".join(values)
+            self.status_var.set(f"Detected camera IDs: {detected}")
+        else:
+            self.status_var.set(
+                "No camera was detected automatically. You can still enter an ID manually."
+            )
+
+        if not self.running:
+            self.start_button.configure(state="normal")
+        self._update_source_controls()
 
     def _browse_video(self) -> None:
         path = filedialog.askopenfilename(
@@ -278,13 +442,11 @@ class LaserShooterApp:
                 source = int(self.camera_id_var.get())
             except ValueError as exc:
                 raise ValueError("Camera ID must be a whole number.") from exc
-            self.source_is_webcam = True
             return source
 
         path = Path(self.video_path_var.get().strip())
         if not path.is_file():
             raise ValueError("Select an existing video file.")
-        self.source_is_webcam = False
         return str(path)
 
     def start(self) -> None:
@@ -294,104 +456,119 @@ class LaserShooterApp:
         try:
             config = self._read_config()
             source = self._read_source()
-            capture = open_video_capture(source)
-        except (RuntimeError, ValueError) as exc:
+        except ValueError as exc:
             messagebox.showerror(APP_TITLE, str(exc), parent=self.root)
             self.status_var.set(f"Could not start: {exc}")
             return
 
-        self.capture = capture
-        self.engine = LaserShooterEngine(config)
         self.player_name = self.player_var.get().strip() or "Player"
+        self.worker = FrameWorker(source, config, self.player_name)
         self.running = True
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self._set_settings_state("disabled")
         self._clear_scoreboard()
-        self.status_var.set("Camera started. Aim it at all four target markers.")
-        self.after_id = self.root.after(0, self._process_frame)
+        self.status_var.set("Opening the camera in the background...")
+        self.worker.start()
 
     def stop(self) -> None:
-        self._stop_capture("Stopped.")
-
-    def _stop_capture(self, status: str) -> None:
-        self.running = False
-        if self.after_id is not None:
-            try:
-                self.root.after_cancel(self.after_id)
-            except tk.TclError:
-                pass
-            self.after_id = None
-        if self.capture is not None:
-            self.capture.release()
-            self.capture = None
-        self.start_button.configure(state="normal")
+        if self.worker is None:
+            return
         self.stop_button.configure(state="disabled")
-        self._set_settings_state("normal")
-        self._update_source_controls()
-        self.status_var.set(status)
+        self.status_var.set("Stopping the camera...")
+        self.worker.stop()
 
     def _set_settings_state(self, state: str) -> None:
         self.player_entry.configure(state=state)
         self.source_combo.configure(state="readonly" if state == "normal" else "disabled")
-        self.camera_spinbox.configure(state="disabled" if state == "disabled" else "normal")
+        self.camera_combo.configure(state="disabled" if state == "disabled" else "normal")
+        self.detect_button.configure(state="disabled")
         self.video_entry.configure(state="disabled")
         self.browse_button.configure(state="disabled")
         for entry in self.config_entries:
             entry.configure(state=state)
 
-    def _process_frame(self) -> None:
-        self.after_id = None
-        if not self.running or self.capture is None or self.engine is None:
-            return
-
-        success, frame = self.capture.read()
-        if not success:
-            status = (
-                "The webcam stopped returning frames."
-                if self.source_is_webcam
-                else "Video playback finished."
-            )
-            self._stop_capture(status)
-            return
+    def _poll_background_work(self) -> None:
+        self.poll_after_id = None
 
         try:
-            result = self.engine.process_frame(frame, self.player_name)
-            self._render_result(result)
-        except Exception as exc:
-            self._stop_capture(f"Processing error: {exc}")
-            messagebox.showerror(APP_TITLE, str(exc), parent=self.root)
+            camera_ids, error = self.camera_scan_results.get_nowait()
+        except Empty:
+            pass
+        else:
+            self._apply_camera_scan_result(camera_ids, error)
+
+        worker = self.worker
+        if worker is not None:
+            while True:
+                try:
+                    event, payload = worker.events.get_nowait()
+                except Empty:
+                    break
+                self._handle_worker_event(worker, event, payload)
+
+            if self.worker is worker:
+                result = worker.latest_frame()
+                if result is not None:
+                    self._render_result(result)
+
+        self.poll_after_id = self.root.after(33, self._poll_background_work)
+
+    def _handle_worker_event(
+        self, worker: FrameWorker, event: str, payload: object
+    ) -> None:
+        if worker is not self.worker:
             return
 
-        self.after_id = self.root.after(15, self._process_frame)
+        if event == "started":
+            self.status_var.set("Camera started. Aim it at all four target markers.")
+            return
+
+        if event == "shot" and isinstance(payload, Shot):
+            self.score_tree.insert(
+                "",
+                "end",
+                values=(payload.number, payload.score, f"({payload.x}, {payload.y})"),
+            )
+            return
+
+        if event != "finished":
+            return
+
+        reason, detail = payload
+        self.worker = None
+        self.running = False
+        self.start_button.configure(state="normal")
+        self.stop_button.configure(state="disabled")
+        self._set_settings_state("normal")
+        self._update_source_controls()
+        self.status_var.set(str(detail))
+
+        if reason == "error":
+            messagebox.showerror(APP_TITLE, str(detail), parent=self.root)
 
     def _render_result(self, result: FrameResult) -> None:
-        self._show_image(self.preview_label, result.preview, PREVIEW_SIZE)
-        self._show_image(self.mask_label, result.threshold_mask, PREVIEW_SIZE)
-
-        if result.target is None:
-            self._clear_image(
-                self.target_label,
-                f"Aim at the full target\nMarkers detected: {result.marker_count}/4",
-            )
+        selected_tab = self.notebook.index(self.notebook.select())
+        if selected_tab == 0:
+            self._show_image(self.preview_label, result.preview, PREVIEW_SIZE)
+            if result.target is None:
+                self._clear_image(
+                    self.target_label,
+                    f"Aim at the full target\nMarkers detected: {result.marker_count}/4",
+                )
+            else:
+                self._show_image(self.target_label, result.target, PREVIEW_SIZE)
         else:
-            self._show_image(self.target_label, result.target, PREVIEW_SIZE)
+            self._show_image(self.mask_label, result.threshold_mask, PREVIEW_SIZE)
 
-        for shot in result.new_shots:
-            self.score_tree.insert(
-                "", "end", values=(shot.number, shot.score, f"({shot.x}, {shot.y})")
-            )
-
-        if self.engine is None:
-            return
-        self.total_score_var.set(str(self.engine.total_score))
+        self.total_score_var.set(str(result.total_score))
         self.shot_count_var.set(
-            f"{len(self.engine.shots)} / {self.engine.config.max_shots} shots"
+            f"{result.shot_count} / {result.max_shots} shots"
         )
 
         if result.round_complete:
             self.status_var.set(
-                f"Round complete — total score: {self.engine.total_score}. "
+                f"Round complete — total score: {result.total_score}. "
                 "Press Reset round to continue."
             )
         elif result.marker_count == 4:
@@ -400,8 +577,8 @@ class LaserShooterApp:
             self.status_var.set(f"Searching for target markers: {result.marker_count}/4")
 
     def reset_round(self) -> None:
-        if self.engine is not None:
-            self.engine.reset()
+        if self.worker is not None:
+            self.worker.request_reset()
         self._clear_scoreboard()
         self.status_var.set("Round reset. Ready.")
 
@@ -416,8 +593,8 @@ class LaserShooterApp:
         self.shot_count_var.set(f"0 / {maximum} shots")
 
     def _on_threshold_changed(self, *_args: object) -> None:
-        if self.engine is not None:
-            self.engine.update_threshold(self.threshold_var.get())
+        if self.worker is not None:
+            self.worker.update_threshold(self.threshold_var.get())
 
     @staticmethod
     def _show_image(label: tk.Label, frame: object, size: tuple[int, int]) -> None:
@@ -444,7 +621,14 @@ class LaserShooterApp:
         label.image = None
 
     def close(self) -> None:
-        self._stop_capture("Closed.")
+        if self.poll_after_id is not None:
+            try:
+                self.root.after_cancel(self.poll_after_id)
+            except tk.TclError:
+                pass
+            self.poll_after_id = None
+        if self.worker is not None:
+            self.worker.stop()
         self.root.destroy()
 
 

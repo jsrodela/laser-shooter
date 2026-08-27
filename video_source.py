@@ -72,3 +72,22 @@ def open_video_capture(source: int | str) -> cv2.VideoCapture:
         f"Could not open {source_type}: {source}. "
         "Check the camera id, Windows camera permissions, and whether another app is using it."
     )
+
+
+def discover_camera_ids(max_camera_id: int = 9) -> list[int]:
+    """Return camera indexes that can open and provide at least one frame."""
+    backend = cv2.CAP_MSMF if os.name == "nt" else cv2.CAP_ANY
+    discovered: list[int] = []
+
+    for camera_id in range(max_camera_id + 1):
+        capture = cv2.VideoCapture(camera_id, backend)
+        try:
+            if not capture.isOpened():
+                continue
+            success, _ = capture.read()
+            if success:
+                discovered.append(camera_id)
+        finally:
+            capture.release()
+
+    return discovered

@@ -37,12 +37,17 @@ options run the legacy terminal interfaces.
 The GUI combines the full workflow in one window:
 
 - Live camera preview with Aruco marker count
+- Automatic background detection and selection of available camera IDs
 - Rectified target preview
 - Live red-laser threshold calibration and slider
 - Webcam and video-file selection
 - Player name and target settings
 - Shot history, shot count, and total score
 - Start, stop, and round reset controls
+
+Camera capture and image processing run on a background worker. The GUI keeps
+only the newest frame, so a slow or temporarily stalled camera does not block
+the Windows interface.
 
 ### Windows PowerShell
 

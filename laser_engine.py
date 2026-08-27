@@ -52,6 +52,9 @@ class FrameResult:
     marker_count: int
     new_shots: list[Shot]
     round_complete: bool
+    total_score: int
+    shot_count: int
+    max_shots: int
 
 
 class LaserShooterEngine:
@@ -171,6 +174,9 @@ class LaserShooterEngine:
             marker_count=marker_count,
             new_shots=new_shots,
             round_complete=len(self.shots) >= self.config.max_shots,
+            total_score=self.total_score,
+            shot_count=len(self.shots),
+            max_shots=self.config.max_shots,
         )
 
     def _detect_shots(self, target: np.ndarray) -> list[Shot]:
