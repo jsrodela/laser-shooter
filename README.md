@@ -37,7 +37,7 @@ options run the legacy terminal interfaces.
 The GUI combines the full workflow in one window:
 
 - Live camera preview with Aruco marker count
-- Automatic background detection and selection of available camera IDs
+- Fast `Auto` camera selection that stops at the first available camera
 - Rectified target preview
 - Live red-laser threshold calibration and slider
 - Webcam and video-file selection
@@ -47,7 +47,10 @@ The GUI combines the full workflow in one window:
 
 Camera capture and image processing run on a background worker. The GUI keeps
 only the newest frame, so a slow or temporarily stalled camera does not block
-the Windows interface.
+the Windows interface. The initial window no longer scans every possible camera
+ID. Leave **Camera ID** set to `Auto` and press **Start** to open the first
+available camera; use **Detect** only when you want a complete list of camera
+IDs.
 
 ### Windows PowerShell
 

@@ -8,7 +8,11 @@ from tkinter import filedialog, messagebox, ttk
 import cv2
 
 from laser_engine import FrameResult, LaserShooterEngine, ShooterConfig, Shot
-from video_source import discover_camera_ids, open_video_capture
+from video_source import (
+    discover_camera_ids,
+    open_first_available_camera,
+    open_video_capture,
+)
 
 
 APP_TITLE = "Laser Shooter"
@@ -20,7 +24,7 @@ class FrameWorker:
 
     def __init__(
         self,
-        source: int | str,
+        source: int | str | None,
         config: ShooterConfig,
         player_name: str,
     ):
@@ -63,9 +67,13 @@ class FrameWorker:
         detail = "Stopped."
 
         try:
-            capture = open_video_capture(self.source)
+            opened_source = self.source
+            if self.source is None:
+                capture, opened_source = open_first_available_camera()
+            else:
+                capture = open_video_capture(self.source)
             engine = LaserShooterEngine(self.config)
-            self.events.put(("started", self.source))
+            self.events.put(("started", opened_source))
 
             while not self.stop_event.is_set():
                 if self.reset_event.is_set():
@@ -82,7 +90,7 @@ class FrameWorker:
                         reason = "ended"
                         detail = (
                             "The webcam stopped returning frames."
-                            if isinstance(self.source, int)
+                            if isinstance(opened_source, int)
                             else "Video playback finished."
                         )
                     break
@@ -134,7 +142,7 @@ class LaserShooterApp:
 
         self.player_var = tk.StringVar(value="Player")
         self.source_type_var = tk.StringVar(value="Webcam")
-        self.camera_id_var = tk.StringVar(value="0")
+        self.camera_id_var = tk.StringVar(value="Auto")
         self.video_path_var = tk.StringVar()
         self.threshold_var = tk.IntVar(value=160)
         self.target_width_var = tk.StringVar(value="595")
@@ -151,7 +159,6 @@ class LaserShooterApp:
         self._update_source_controls()
         self.threshold_var.trace_add("write", self._on_threshold_changed)
         self.poll_after_id = self.root.after(30, self._poll_background_work)
-        self._scan_cameras()
 
     def _build_style(self) -> None:
         style = ttk.Style(self.root)
@@ -187,7 +194,11 @@ class LaserShooterApp:
 
         ttk.Label(controls, text="Camera ID").grid(row=0, column=4, padx=(0, 4), pady=8)
         self.camera_combo = ttk.Combobox(
-            controls, textvariable=self.camera_id_var, width=6, state="normal"
+            controls,
+            textvariable=self.camera_id_var,
+            values=("Auto", "0"),
+            width=6,
+            state="normal",
         )
         self.camera_combo.grid(row=0, column=5, padx=(0, 4), pady=8)
         self.detect_button = ttk.Button(
@@ -390,7 +401,7 @@ class LaserShooterApp:
         self, camera_ids: list[int], error: str | None
     ) -> None:
         self.camera_scan_in_progress = False
-        values = tuple(str(camera_id) for camera_id in camera_ids)
+        values = ("Auto", *(str(camera_id) for camera_id in camera_ids))
         self.camera_combo.configure(values=values)
 
         if error:
@@ -398,8 +409,8 @@ class LaserShooterApp:
         elif camera_ids:
             current_id = self.camera_id_var.get()
             if current_id not in values:
-                self.camera_id_var.set(values[0])
-            detected = ", ".join(values)
+                self.camera_id_var.set("Auto")
+            detected = ", ".join(values[1:])
             self.status_var.set(f"Detected camera IDs: {detected}")
         else:
             self.status_var.set(
@@ -436,12 +447,15 @@ class LaserShooterApp:
         config.validate()
         return config
 
-    def _read_source(self) -> int | str:
+    def _read_source(self) -> int | str | None:
         if self.source_type_var.get() == "Webcam":
+            camera_id = self.camera_id_var.get().strip()
+            if camera_id.casefold() == "auto":
+                return None
             try:
-                source = int(self.camera_id_var.get())
+                source = int(camera_id)
             except ValueError as exc:
-                raise ValueError("Camera ID must be a whole number.") from exc
+                raise ValueError("Camera ID must be Auto or a whole number.") from exc
             return source
 
         path = Path(self.video_path_var.get().strip())
@@ -521,7 +535,12 @@ class LaserShooterApp:
             return
 
         if event == "started":
-            self.status_var.set("Camera started. Aim it at all four target markers.")
+            if isinstance(payload, int):
+                self.status_var.set(
+                    f"Camera {payload} started. Aim it at all four target markers."
+                )
+            else:
+                self.status_var.set("Video started. Aim it at all four target markers.")
             return
 
         if event == "shot" and isinstance(payload, Shot):

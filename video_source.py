@@ -74,6 +74,22 @@ def open_video_capture(source: int | str) -> cv2.VideoCapture:
     )
 
 
+def open_first_available_camera(
+    max_camera_id: int = 9,
+) -> tuple[cv2.VideoCapture, int]:
+    """Open the first available camera without scanning every possible ID."""
+    for camera_id in range(max_camera_id + 1):
+        try:
+            return open_video_capture(camera_id), camera_id
+        except RuntimeError:
+            continue
+
+    raise RuntimeError(
+        f"Could not find an available webcam between IDs 0 and {max_camera_id}. "
+        "Check Windows camera permissions and whether another app is using it."
+    )
+
+
 def discover_camera_ids(max_camera_id: int = 9) -> list[int]:
     """Return camera indexes that can open and provide at least one frame."""
     backend = cv2.CAP_MSMF if os.name == "nt" else cv2.CAP_ANY
