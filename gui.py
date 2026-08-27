@@ -197,6 +197,7 @@ class LaserShooterApp:
         self._build_display_window()
         self._update_source_controls()
         self.threshold_var.trace_add("write", self._on_threshold_changed)
+        self.root.after(200, self._show_display_window)
         self.poll_after_id = self.root.after(30, self._poll_background_work)
 
     def _build_style(self) -> None:
