@@ -502,6 +502,15 @@ class LaserShooterApp:
         )
 
     @staticmethod
+    def _crop_target_for_display(target: object) -> object:
+        """Keep the centered scoring area while removing the marker margins."""
+        height, width = target.shape[:2]
+        side = min(width, height)
+        left = (width - side) // 2
+        top = (height - side) // 2
+        return target[top : top + side, left : left + side].copy()
+
+    @staticmethod
     def _make_image_panel(parent: tk.Misc, text: str) -> tk.Label:
         return tk.Label(
             parent,
@@ -753,7 +762,7 @@ class LaserShooterApp:
         )
 
         if result.target is not None:
-            self.latest_display_target = result.target
+            self.latest_display_target = self._crop_target_for_display(result.target)
             self._redraw_display_target()
             self.display_has_target = True
         elif not self.display_has_target:

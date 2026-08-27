@@ -45,6 +45,7 @@ The GUI combines the full workflow in one window:
 - Player name and target settings
 - Shot history, shot count, and total score
 - Separate large target display with remaining shots and score
+- Marker-free cropped scoring area in the target display
 - Start, stop, and round reset controls
 
 Camera capture and image processing run on a background worker. The GUI keeps
