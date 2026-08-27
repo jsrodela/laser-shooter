@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
 from typing import Callable
-import os
 import time
+
+from video_source import open_video_capture, select_video_source
 
 update = lambda name, default: (lambda x: int(x) if x.isdigit() else default)(
     input(f"{name} (default: {default}): ")
@@ -152,22 +153,12 @@ update: Callable[[str, float], float] = lambda name, default: (
     lambda x: int(x) if x.isdigit() else default
 )(input(f"{name} (default: {default}): "))
 
-vid = 0
-
-print("Select Video input\n\t(0) Webcam (1) Videos\n")
-ans = update("Video input", 0)
-
-if ans == 0:
-    vid = update("Webcam Input id", 0)
-if ans == 1:
-    videos = os.listdir("videos")
-    for idx, file in enumerate(videos):
-        print(f"\t({idx}) {file}")
-    print()
-    vid = os.path.join("videos", videos[int(input("Video id: "))])
-
-print(vid)
-cap = cv2.VideoCapture(vid)
+try:
+    vid = select_video_source()
+    print(vid)
+    cap = open_video_capture(vid)
+except RuntimeError as error:
+    raise SystemExit(f"Error: {error}") from error
 
 shots = []  # 기록: (shot_number, (x,y), score)
 hits = []  # 기록: (x,y,timestamp)
@@ -176,6 +167,8 @@ hits = []  # 기록: (x,y,timestamp)
 while True:
     ret, frame = cap.read()
     if not ret:
+        if isinstance(vid, int):
+            print("Error: The webcam stopped returning frames.")
         break
     hh, ww = frame.shape[:2]
 
