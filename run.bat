@@ -7,6 +7,7 @@ title Laser Shooter
 set "PYTHONUTF8=1"
 set "PIP_DISABLE_PIP_VERSION_CHECK=1"
 set "VENV_PYTHON=%~dp0.venv\Scripts\python.exe"
+set "VENV_PYTHONW=%~dp0.venv\Scripts\pythonw.exe"
 set "REQUESTED_MODE=%~1"
 
 echo.
@@ -30,7 +31,7 @@ if not exist "%VENV_PYTHON%" (
 "%VENV_PYTHON%" -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
 if errorlevel 1 goto :venv_version_error
 
-"%VENV_PYTHON%" -c "import cv2, numpy; assert hasattr(cv2, 'aruco')" >nul 2>&1
+"%VENV_PYTHON%" -c "import cv2, numpy, tkinter; assert hasattr(cv2, 'aruco')" >nul 2>&1
 if errorlevel 1 (
     echo [SETUP] Installing dependencies...
     "%VENV_PYTHON%" -m pip install --upgrade pip
@@ -45,37 +46,16 @@ if errorlevel 1 (
 echo [OK] Setup is complete.
 
 if /i "%REQUESTED_MODE%"=="setup" exit /b 0
+if /i "%REQUESTED_MODE%"=="gui" goto :gui_once
 if /i "%REQUESTED_MODE%"=="calibrate" goto :calibrate_once
 if /i "%REQUESTED_MODE%"=="main" goto :main_once
 if not "%REQUESTED_MODE%"=="" goto :usage_error
+goto :gui_once
 
-:menu
-echo.
-echo [1] Run Laser Shooter
-echo [2] Adjust laser threshold
-echo [3] Exit
-echo.
-set "MENU_CHOICE="
-set /p "MENU_CHOICE=Select: "
-
-if "%MENU_CHOICE%"=="1" goto :run_main
-if "%MENU_CHOICE%"=="2" goto :run_calibration
-if "%MENU_CHOICE%"=="3" exit /b 0
-
-echo Invalid selection.
-goto :menu
-
-:run_main
-"%VENV_PYTHON%" "%~dp0main.py"
-echo.
-pause
-goto :menu
-
-:run_calibration
-"%VENV_PYTHON%" "%~dp0red_difference.py"
-echo.
-pause
-goto :menu
+:gui_once
+if not exist "%VENV_PYTHONW%" goto :venv_error
+start "" "%VENV_PYTHONW%" "%~dp0gui.py"
+exit /b 0
 
 :main_once
 "%VENV_PYTHON%" "%~dp0main.py"
@@ -166,7 +146,7 @@ exit /b 1
 :usage_error
 echo.
 echo [ERROR] Unknown option: %REQUESTED_MODE%
-echo Usage: run.bat [setup^|calibrate^|main]
+echo Usage: run.bat [setup^|gui^|calibrate^|main]
 echo.
 pause
 exit /b 2

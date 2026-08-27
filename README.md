@@ -17,16 +17,32 @@ On a clean Windows 10 or 11 installation, double-click `run.bat`. It will:
 2. Install Python 3.13 with `winget` when Python is missing.
 3. Create `.venv` without requiring PowerShell activation.
 4. Install the required packages.
-5. Show a menu for threshold calibration and normal execution.
+5. Open the graphical camera, calibration, and scoring interface.
 
 An internet connection is required on the first run. Command-line options are
 also available:
 
 ```bat
 run.bat setup
+run.bat gui
 run.bat calibrate
 run.bat main
 ```
+
+Double-clicking `run.bat` opens the GUI by default. The `calibrate` and `main`
+options run the legacy terminal interfaces.
+
+## Graphical interface
+
+The GUI combines the full workflow in one window:
+
+- Live camera preview with Aruco marker count
+- Rectified target preview
+- Live red-laser threshold calibration and slider
+- Webcam and video-file selection
+- Player name and target settings
+- Shot history, shot count, and total score
+- Start, stop, and round reset controls
 
 ### Windows PowerShell
 
