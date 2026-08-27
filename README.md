@@ -44,6 +44,7 @@ The GUI combines the full workflow in one window:
 - Webcam and video-file selection
 - Player name and target settings
 - Shot history, shot count, and total score
+- Separate large target display with remaining shots and score
 - Start, stop, and round reset controls
 
 Camera capture and image processing run on a background worker. The GUI keeps

@@ -17,6 +17,7 @@ from video_source import (
 
 
 APP_TITLE = "Laser Shooter"
+DISPLAY_TITLE = "Laser Shooter - Target Display"
 PREVIEW_SIZE = (620, 540)
 
 
@@ -184,11 +185,16 @@ class LaserShooterApp:
         self.max_shots_var = tk.StringVar(value="10")
         self.total_score_var = tk.StringVar(value="0")
         self.shot_count_var = tk.StringVar(value="0 / 10")
+        self.remaining_shots_var = tk.StringVar(value="10")
         self.fps_var = tk.StringVar(value="FPS: --")
         self.status_var = tk.StringVar(value="Ready. Configure the camera and press Start.")
+        self.display_has_target = False
+        self.latest_display_target: object | None = None
+        self.display_resize_after_id: str | None = None
 
         self._build_style()
         self._build_ui()
+        self._build_display_window()
         self._update_source_controls()
         self.threshold_var.trace_add("write", self._on_threshold_changed)
         self.poll_after_id = self.root.after(30, self._poll_background_work)
@@ -262,7 +268,11 @@ class LaserShooterApp:
         )
         self.stop_button.grid(row=0, column=11, padx=4, pady=8)
         self.reset_button = ttk.Button(controls, text="Reset round", command=self.reset_round)
-        self.reset_button.grid(row=0, column=12, padx=(4, 10), pady=8)
+        self.reset_button.grid(row=0, column=12, padx=4, pady=8)
+        self.display_button = ttk.Button(
+            controls, text="Show display", command=self._show_display_window
+        )
+        self.display_button.grid(row=0, column=13, padx=(4, 10), pady=8)
 
         ttk.Label(controls, text="Laser threshold").grid(
             row=1, column=0, padx=(10, 4), pady=(0, 10)
@@ -388,6 +398,107 @@ class LaserShooterApp:
             anchor="w",
         )
         status.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+
+    def _build_display_window(self) -> None:
+        self.display_window = tk.Toplevel(self.root)
+        self.display_window.title(DISPLAY_TITLE)
+        self.display_window.geometry("1280x800+80+80")
+        self.display_window.minsize(800, 500)
+        self.display_window.configure(bg="#060b16")
+        self.display_window.protocol("WM_DELETE_WINDOW", self._hide_display_window)
+        self.display_window.columnconfigure(0, weight=1)
+        self.display_window.columnconfigure(1, minsize=300)
+        self.display_window.rowconfigure(0, weight=1)
+
+        target_panel = tk.Frame(self.display_window, bg="#111827")
+        target_panel.grid(row=0, column=0, sticky="nsew", padx=(12, 6), pady=12)
+        target_panel.columnconfigure(0, weight=1)
+        target_panel.rowconfigure(0, weight=1)
+        self.display_target_label = self._make_image_panel(
+            target_panel,
+            "과녁을 비추면\n피격 상태가 여기에 표시됩니다",
+        )
+        self.display_target_label.configure(font=("Segoe UI", 20, "bold"))
+        self.display_target_label.grid(row=0, column=0, sticky="nsew")
+        self.display_target_label.bind("<Configure>", self._on_display_target_resized)
+
+        stats_panel = tk.Frame(self.display_window, bg="#0b1220", width=300)
+        stats_panel.grid(row=0, column=1, sticky="nsew", padx=(6, 12), pady=12)
+        stats_panel.grid_propagate(False)
+        stats_panel.columnconfigure(0, weight=1)
+        stats_panel.rowconfigure(0, weight=1)
+        stats_panel.rowconfigure(1, weight=1)
+
+        self._build_large_stat(
+            stats_panel,
+            row=0,
+            title="남은 총알",
+            variable=self.remaining_shots_var,
+            color="#38bdf8",
+        )
+        self._build_large_stat(
+            stats_panel,
+            row=1,
+            title="점수",
+            variable=self.total_score_var,
+            color="#facc15",
+        )
+
+    @staticmethod
+    def _build_large_stat(
+        parent: tk.Misc,
+        row: int,
+        title: str,
+        variable: tk.StringVar,
+        color: str,
+    ) -> None:
+        panel = tk.Frame(parent, bg="#0b1220")
+        panel.grid(row=row, column=0, sticky="nsew", padx=12, pady=12)
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(0, weight=1)
+        panel.rowconfigure(1, weight=2)
+        tk.Label(
+            panel,
+            text=title,
+            bg="#0b1220",
+            fg="#cbd5e1",
+            font=("Segoe UI", 24, "bold"),
+        ).grid(row=0, column=0, sticky="s", pady=(10, 0))
+        tk.Label(
+            panel,
+            textvariable=variable,
+            bg="#0b1220",
+            fg=color,
+            font=("Segoe UI", 76, "bold"),
+        ).grid(row=1, column=0, sticky="n", pady=(0, 10))
+
+    def _show_display_window(self) -> None:
+        self.display_window.deiconify()
+        self.display_window.lift()
+
+    def _hide_display_window(self) -> None:
+        self.display_window.withdraw()
+
+    def _on_display_target_resized(self, _event: object) -> None:
+        if self.latest_display_target is None:
+            return
+        if self.display_resize_after_id is not None:
+            self.root.after_cancel(self.display_resize_after_id)
+        self.display_resize_after_id = self.root.after(
+            80, self._redraw_display_target
+        )
+
+    def _redraw_display_target(self) -> None:
+        self.display_resize_after_id = None
+        if self.latest_display_target is None:
+            return
+        display_width = max(100, self.display_target_label.winfo_width() - 20)
+        display_height = max(100, self.display_target_label.winfo_height() - 20)
+        self._show_image(
+            self.display_target_label,
+            self.latest_display_target,
+            (display_width, display_height),
+        )
 
     @staticmethod
     def _make_image_panel(parent: tk.Misc, text: str) -> tk.Label:
@@ -522,6 +633,7 @@ class LaserShooterApp:
         self.stop_button.configure(state="normal")
         self._set_settings_state("disabled")
         self._clear_scoreboard()
+        self._reset_display_target()
         self.fps_var.set("FPS: --")
         self.status_var.set("Opening the camera in the background...")
         self.worker.start()
@@ -635,6 +747,19 @@ class LaserShooterApp:
         self.shot_count_var.set(
             f"{result.shot_count} / {result.max_shots} shots"
         )
+        self.remaining_shots_var.set(
+            str(max(0, result.max_shots - result.shot_count))
+        )
+
+        if result.target is not None:
+            self.latest_display_target = result.target
+            self._redraw_display_target()
+            self.display_has_target = True
+        elif not self.display_has_target:
+            self._clear_image(
+                self.display_target_label,
+                f"과녁 마커를 찾는 중\n{result.marker_count}/4",
+            )
 
         if result.round_complete:
             self.status_var.set(
@@ -650,6 +775,7 @@ class LaserShooterApp:
         if self.worker is not None:
             self.worker.request_reset()
         self._clear_scoreboard()
+        self._reset_display_target()
         self.status_var.set("Round reset. Ready.")
 
     def _clear_scoreboard(self) -> None:
@@ -661,6 +787,18 @@ class LaserShooterApp:
         except ValueError:
             maximum = 10
         self.shot_count_var.set(f"0 / {maximum} shots")
+        self.remaining_shots_var.set(str(maximum))
+
+    def _reset_display_target(self) -> None:
+        self.display_has_target = False
+        self.latest_display_target = None
+        if self.display_resize_after_id is not None:
+            self.root.after_cancel(self.display_resize_after_id)
+            self.display_resize_after_id = None
+        self._clear_image(
+            self.display_target_label,
+            "과녁을 비추면\n피격 상태가 여기에 표시됩니다",
+        )
 
     def _on_threshold_changed(self, *_args: object) -> None:
         if self.worker is not None:
