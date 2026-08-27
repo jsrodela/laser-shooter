@@ -4,6 +4,7 @@ from queue import Empty, Full, Queue
 from threading import Event, Lock, Thread
 from time import perf_counter
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, ttk
 
 import cv2
@@ -20,6 +21,56 @@ from video_source import (
 APP_TITLE = "Laser Shooter"
 DISPLAY_TITLE = "Laser Shooter - Target Display"
 PREVIEW_SIZE = (620, 540)
+
+
+class AutoFitLabel(tk.Label):
+    """Keep single-line text as large as its available area allows."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        family: str = "Segoe UI",
+        weight: str = "bold",
+        padding: tuple[int, int] = (12, 8),
+        **kwargs: object,
+    ):
+        self._fit_font = tkfont.Font(family=family, size=12, weight=weight)
+        self._fit_padding = padding
+        self._fit_after_id: str | None = None
+        self._fit_variable = kwargs.get("textvariable")
+        super().__init__(parent, font=self._fit_font, **kwargs)
+        self.bind("<Configure>", self._schedule_font_fit, add="+")
+        if isinstance(self._fit_variable, tk.Variable):
+            self._fit_variable.trace_add("write", self._schedule_font_fit)
+
+    def _schedule_font_fit(self, *_args: object) -> None:
+        if self._fit_after_id is not None:
+            self.after_cancel(self._fit_after_id)
+        self._fit_after_id = self.after_idle(self._fit_font_to_area)
+
+    def _fit_font_to_area(self) -> None:
+        self._fit_after_id = None
+        available_width = max(1, self.winfo_width() - self._fit_padding[0] * 2)
+        available_height = max(1, self.winfo_height() - self._fit_padding[1] * 2)
+        text = self.cget("text") or "0"
+        low, high = 8, max(8, available_height)
+        best = low
+
+        while low <= high:
+            size = (low + high) // 2
+            self._fit_font.configure(size=size)
+            fits = (
+                self._fit_font.measure(text) <= available_width
+                and self._fit_font.metrics("linespace") <= available_height
+            )
+            if fits:
+                best = size
+                low = size + 1
+            else:
+                high = size - 1
+
+        self._fit_font.configure(size=best)
 
 
 class FrameWorker:
@@ -458,23 +509,22 @@ class LaserShooterApp:
     ) -> None:
         panel = tk.Frame(parent, bg="#0b1220")
         panel.grid(row=row, column=0, sticky="nsew", padx=12, pady=12)
-        panel.columnconfigure(0, weight=1)
-        panel.rowconfigure(0, weight=1)
-        panel.rowconfigure(1, weight=2)
-        tk.Label(
+        title_label = AutoFitLabel(
             panel,
             text=title,
             bg="#0b1220",
             fg="#cbd5e1",
-            font=("Segoe UI", 24, "bold"),
-        ).grid(row=0, column=0, sticky="s", pady=(10, 0))
-        tk.Label(
+            padding=(8, 4),
+        )
+        title_label.place(relx=0, rely=0, relwidth=1, relheight=0.25)
+        value_label = AutoFitLabel(
             panel,
             textvariable=variable,
             bg="#0b1220",
             fg=color,
-            font=("Segoe UI", 76, "bold"),
-        ).grid(row=1, column=0, sticky="n", pady=(0, 10))
+            padding=(8, 4),
+        )
+        value_label.place(relx=0, rely=0.25, relwidth=1, relheight=0.75)
 
     def _show_display_window(self) -> None:
         self.display_window.deiconify()
