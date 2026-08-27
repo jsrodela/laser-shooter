@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import cv2
+import numpy as np
 
 from laser_engine import FrameResult, LaserShooterEngine, ShooterConfig, Shot
 from video_source import (
@@ -191,6 +192,8 @@ class LaserShooterApp:
         self.display_has_target = False
         self.latest_display_target: object | None = None
         self.display_resize_after_id: str | None = None
+        self.display_shots: list[Shot] = []
+        self.active_config: ShooterConfig | None = None
 
         self._build_style()
         self._build_ui()
@@ -502,13 +505,29 @@ class LaserShooterApp:
         )
 
     @staticmethod
-    def _crop_target_for_display(target: object) -> object:
-        """Keep the centered scoring area while removing the marker margins."""
-        height, width = target.shape[:2]
-        side = min(width, height)
-        left = (width - side) // 2
-        top = (height - side) // 2
-        return target[top : top + side, left : left + side].copy()
+    def _render_clean_target(
+        config: ShooterConfig, shots: list[Shot]
+    ) -> np.ndarray:
+        """Render the recognized scoring area without camera pixels or markers."""
+        side = min(config.target_width, config.target_height)
+        left = (config.target_width - side) // 2
+        top = (config.target_height - side) // 2
+        center = (config.target_width // 2 - left, config.target_height // 2 - top)
+        image = np.full((side, side, 3), 255, dtype=np.uint8)
+
+        for radius in config.ring_radii:
+            cv2.circle(image, center, radius, (20, 20, 20), 3, cv2.LINE_AA)
+
+        for index, shot in enumerate(shots):
+            point = (shot.x - left, shot.y - top)
+            if not 0 <= point[0] < side or not 0 <= point[1] < side:
+                continue
+            is_latest = index == len(shots) - 1
+            color = (0, 200, 0) if is_latest else (0, 0, 230)
+            cv2.circle(image, point, 9 if is_latest else 7, (20, 20, 20), -1)
+            cv2.circle(image, point, 7 if is_latest else 5, color, -1)
+
+        return image
 
     @staticmethod
     def _make_image_panel(parent: tk.Misc, text: str) -> tk.Label:
@@ -637,6 +656,7 @@ class LaserShooterApp:
             return
 
         self.player_name = self.player_var.get().strip() or "Player"
+        self.active_config = config
         self.worker = FrameWorker(source, config, self.player_name)
         self.running = True
         self.start_button.configure(state="disabled")
@@ -712,6 +732,7 @@ class LaserShooterApp:
             return
 
         if event == "shot" and isinstance(payload, Shot):
+            self.display_shots.append(payload)
             self.score_tree.insert(
                 "",
                 "end",
@@ -761,8 +782,10 @@ class LaserShooterApp:
             str(max(0, result.max_shots - result.shot_count))
         )
 
-        if result.target is not None:
-            self.latest_display_target = self._crop_target_for_display(result.target)
+        if result.target is not None and self.active_config is not None:
+            self.latest_display_target = self._render_clean_target(
+                self.active_config, self.display_shots
+            )
             self._redraw_display_target()
             self.display_has_target = True
         elif not self.display_has_target:
@@ -801,6 +824,7 @@ class LaserShooterApp:
 
     def _reset_display_target(self) -> None:
         self.display_has_target = False
+        self.display_shots.clear()
         self.latest_display_target = None
         if self.display_resize_after_id is not None:
             self.root.after_cancel(self.display_resize_after_id)
